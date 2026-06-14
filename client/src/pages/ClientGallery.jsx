@@ -70,12 +70,17 @@ export default function ClientGallery() {
           } : null);
           setIsStandalone(false);
         } catch (err) {
-          console.warn("Backend API unavailable for code, using offline mockup data", err);
-          if (EVENT_PHOTOS[codeUpper]) {
-            setVerifiedEvent(EVENT_PHOTOS[codeUpper]);
-            setIsStandalone(true);
+          const errMsg = err.message || '';
+          if (errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Load failed') || err instanceof TypeError) {
+            console.warn("Backend API unavailable for code, using offline mockup data", err);
+            if (EVENT_PHOTOS[codeUpper]) {
+              setVerifiedEvent(EVENT_PHOTOS[codeUpper]);
+              setIsStandalone(true);
+            } else {
+              setError(`Access code "${urlCode}" is invalid.`);
+            }
           } else {
-            setError(`Access code "${urlCode}" is invalid.`);
+            setError(errMsg || `Access code "${urlCode}" is invalid.`);
           }
         }
       };
@@ -99,13 +104,20 @@ export default function ClientGallery() {
       setIsStandalone(false);
       navigate(`/gallery/${codeUpper}`);
     } catch (err) {
-      console.warn("Backend API access failed, trying offline mockup database", err);
-      if (EVENT_PHOTOS[codeUpper]) {
-        setVerifiedEvent(EVENT_PHOTOS[codeUpper]);
-        setIsStandalone(true);
-        navigate(`/gallery/${codeUpper}`);
+      const errMsg = err.message || '';
+      // Check if error is network connection failure
+      if (errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Load failed') || err instanceof TypeError) {
+        console.warn("Backend API access failed, trying offline mockup database", err);
+        if (EVENT_PHOTOS[codeUpper]) {
+          setVerifiedEvent(EVENT_PHOTOS[codeUpper]);
+          setIsStandalone(true);
+          navigate(`/gallery/${codeUpper}`);
+        } else {
+          setError('Invalid code. Please check your credentials and try again. (Hint: Use EMMA26, TECH26, or ELENA4)');
+        }
       } else {
-        setError('Invalid code. Please check your credentials and try again. (Hint: Use EMMA26, TECH26, or ELENA4)');
+        // Real validation error from server
+        setError(errMsg || 'Invalid code. Please try again.');
       }
     }
   };

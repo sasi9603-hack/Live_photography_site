@@ -38,16 +38,23 @@ export default function Login() {
         localStorage.setItem('token', data.token);
         localStorage.setItem('userEmail', data.user.email);
         localStorage.setItem('userName', data.user.name);
+        
+        // Navigate to photographer dashboard
+        navigate('/dashboard');
       } catch (apiErr) {
-        console.warn("Backend API unavailable. Falling back to Mock Standalone Mode.", apiErr);
-        // Fallback simulated authentication
-        await new Promise(resolve => setTimeout(resolve, 800));
-        localStorage.setItem('token', 'mock-jwt-token');
-        localStorage.setItem('userEmail', formData.email || 'photographer@example.com');
+        const errMsg = apiErr.message || '';
+        // If it's a TypeError/Network failure, go mock standalone preview mode
+        if (errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Load failed') || apiErr instanceof TypeError) {
+          console.warn("Backend API unavailable. Falling back to Mock Standalone Mode.", apiErr);
+          await new Promise(resolve => setTimeout(resolve, 800));
+          localStorage.setItem('token', 'mock-jwt-token');
+          localStorage.setItem('userEmail', formData.email || 'photographer@example.com');
+          navigate('/dashboard');
+        } else {
+          // Validation error (e.g. wrong password), throw to outer block
+          throw apiErr;
+        }
       }
-      
-      // Navigate to photographer dashboard
-      navigate('/dashboard');
     } catch (err) {
       setError(err.message || "Authentication failed. Please check your credentials.");
     } finally {
