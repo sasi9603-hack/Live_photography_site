@@ -1,0 +1,28 @@
+# Dependency directories
+node_modules/
+
+# Production builds
+dist/
+dist-ssr/
+
+# Environment files (contains sensitive credentials)
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS and Editor configs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

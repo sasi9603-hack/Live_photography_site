@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
+  
+  --color-brand-50: #faf8f6;
+  --color-brand-100: #f4efeb;
+  --color-brand-200: #e7ddd5;
+  --color-brand-300: #d4c3b6;
+  --color-brand-400: #baa392;
+  --color-brand-500: #a48673;
+  --color-brand-600: #8c6e5a;
+  --color-brand-700: #715545;
+  --color-brand-800: #5b4539;
+  --color-brand-900: #493930;
+  --color-brand-950: #271e19;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #0b0a0a;
+  color: #e5e5e5;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f0e0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #272525;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3737;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(15, 14, 14, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* Custom animations */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #fff 0%, #a48673 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
