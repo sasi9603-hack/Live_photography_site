@@ -1,7 +1,111 @@
 import Event from '../models/Event.js';
 import Photo from '../models/Photo.js';
+import FaceEmbedding from '../models/FaceEmbedding.js';
+import FaceSearch from '../models/FaceSearch.js';
 import { uploadImage } from '../config/cloudinary.js';
 import { isConnected } from '../config/db.js';
+
+
+// In-Memory mock storage for AI face recognition features in local mode
+export const MOCK_FACE_EMBEDDINGS = [];
+export const MOCK_FACE_SEARCHES = [];
+
+// Helper to calculate cosine similarity
+const cosineSimilarity = (vecA, vecB) => {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+};
+
+const detectAndStoreFaces = async (photo, eventId) => {
+  const aiUrl = process.env.AI_SERVICE_URL;
+  if (!aiUrl) {
+    console.warn("AI_SERVICE_URL missing. Simulating background face embedding creation.");
+    // Simulate finding 1-2 faces in the photo
+    const facesCount = Math.floor(Math.random() * 2) + 1; // 1 or 2 faces
+    
+    for (let f = 0; f < facesCount; f++) {
+      const mockEmb = Array.from({ length: 512 }, () => Math.random() * 2 - 1);
+      const norm = Math.sqrt(mockEmb.reduce((sum, val) => sum + val * val, 0));
+      const normalized = mockEmb.map(val => val / (norm || 1));
+      
+      const faceLocation = {
+        x1: Math.floor(Math.random() * 200),
+        y1: Math.floor(Math.random() * 200),
+        x2: Math.floor(Math.random() * 200) + 200,
+        y2: Math.floor(Math.random() * 200) + 200
+      };
+
+      if (isConnected) {
+        await FaceEmbedding.create({
+          event: eventId,
+          photo: photo._id,
+          faceEmbedding: normalized,
+          faceLocation
+        });
+      } else {
+        MOCK_FACE_EMBEDDINGS.push({
+          id: `fe-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          event: eventId,
+          photo: photo.id,
+          faceEmbedding: normalized,
+          faceLocation
+        });
+      }
+    }
+    return;
+  }
+
+  try {
+    const body = new URLSearchParams();
+    // Resolve absolute URL for the image if it is stored locally
+    const photoUrl = photo.url.startsWith('/') ? `http://localhost:5000${photo.url}` : photo.url;
+    body.append('photoUrl', photoUrl);
+
+    const res = await fetch(`${aiUrl}/process-photo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    });
+
+    if (!res.ok) {
+      throw new Error(`AI service responded with status ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (data.success && data.detectedFaces) {
+      for (const face of data.detectedFaces) {
+        if (isConnected) {
+          await FaceEmbedding.create({
+            event: eventId,
+            photo: photo._id,
+            faceEmbedding: face.faceEmbedding,
+            faceLocation: face.faceLocation
+          });
+        } else {
+          MOCK_FACE_EMBEDDINGS.push({
+            id: `fe-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            event: eventId,
+            photo: photo.id,
+            faceEmbedding: face.faceEmbedding,
+            faceLocation: face.faceLocation
+          });
+        }
+      }
+      console.log(`AI face recognition processed: ${data.facesCount} faces saved for photo ${photo._id || photo.id}`);
+    }
+  } catch (err) {
+    console.error(`AI processing failure for photo ${photo._id || photo.id}:`, err.message);
+  }
+};
 
 // In-Memory mock storage for local mode
 export const MOCK_EVENTS = [
@@ -241,6 +345,8 @@ export const uploadPhotos = async (req, res) => {
           event: eventId
         });
         uploadedPhotos.push(photo);
+        // Trigger background face embedding process
+        detectAndStoreFaces(photo, eventId).catch(err => console.error("Error in background face detection:", err));
       } else {
         // Mock mode
         const photo = {
@@ -252,6 +358,8 @@ export const uploadPhotos = async (req, res) => {
         };
         MOCK_PHOTOS.push(photo);
         uploadedPhotos.push(photo);
+        // Trigger background face embedding process (mock mode)
+        detectAndStoreFaces(photo, eventId).catch(err => console.error("Error in background face detection:", err));
       }
     }
 
@@ -282,6 +390,7 @@ export const getGalleryByCode = async (req, res) => {
       res.status(200).json({
         success: true,
         event: {
+          id: event._id,
           eventName: event.name,
           date: event.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
           code: event.code,
@@ -311,6 +420,7 @@ export const getGalleryByCode = async (req, res) => {
       res.status(200).json({
         success: true,
         event: {
+          id: event.id,
           eventName: event.name,
           date: dateFormatted,
           code: event.code,
@@ -354,6 +464,196 @@ export const incrementDownloads = async (req, res) => {
       event.downloadsCount += 1;
       res.status(200).json({ success: true, downloads: event.downloadsCount });
     }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Guest face search: uploads a selfie and returns matching event photos
+// @route   POST /api/events/:id/face-search
+// @access  Public
+export const searchByFace = async (req, res) => {
+  const eventId = req.params.id;
+  const threshold = parseFloat(req.body.threshold) || 0.85;
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Please upload a selfie image file.' });
+    }
+
+    let eventExists;
+    if (isConnected) {
+      eventExists = await Event.findById(eventId);
+    } else {
+      eventExists = MOCK_EVENTS.find(e => e.id === eventId);
+    }
+
+    if (!eventExists) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+
+    const aiUrl = process.env.AI_SERVICE_URL;
+    let guestEmbedding = null;
+
+    if (aiUrl) {
+      // 1. Send selfie file to Python AI service /extract-face
+      const formData = new FormData();
+      const blob = new Blob([req.file.buffer], { type: req.file.mimetype });
+      formData.append('file', blob, req.file.originalname);
+
+      const aiRes = await fetch(`${aiUrl}/extract-face`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!aiRes.ok) {
+        const errorData = await aiRes.json().catch(() => ({}));
+        return res.status(400).json({ 
+          success: false, 
+          message: errorData.detail || 'AI engine failed to extract face from selfie. Make sure your face is clearly visible.' 
+        });
+      }
+
+      const aiData = await aiRes.json();
+      if (aiData.success && aiData.faceEmbedding) {
+        guestEmbedding = aiData.faceEmbedding;
+      }
+    }
+
+    // 2. Query candidates from database / mock list
+    let candidates = [];
+    if (isConnected) {
+      candidates = await FaceEmbedding.find({ event: eventId }).populate('photo');
+    } else {
+      // Mock mode candidate fetch
+      candidates = MOCK_FACE_EMBEDDINGS.filter(fe => fe.event === eventId).map(fe => {
+        const photo = MOCK_PHOTOS.find(p => p.id === fe.photo);
+        return { ...fe, photo };
+      });
+    }
+
+    let matchedPhotos = [];
+    
+    if (guestEmbedding) {
+      // 3. Compute cosine similarity in Node.js
+      const photoMatchesMap = new Map(); // photoId -> highest similarity score
+
+      for (const cand of candidates) {
+        const similarity = cosineSimilarity(guestEmbedding, cand.faceEmbedding);
+        if (similarity >= threshold) {
+          const photoObj = cand.photo;
+          if (photoObj) {
+            const photoId = photoObj._id ? photoObj._id.toString() : photoObj.id;
+            const existingSim = photoMatchesMap.get(photoId) || 0;
+            if (similarity > existingSim) {
+              photoMatchesMap.set(photoId, {
+                photo: photoObj,
+                similarity: similarity
+              });
+            }
+          }
+        }
+      }
+
+      // Convert map to list and sort by similarity descending
+      const sortedMatches = Array.from(photoMatchesMap.values())
+        .sort((a, b) => b.similarity - a.similarity);
+      
+      matchedPhotos = sortedMatches.map(m => m.photo);
+    } else {
+      // Standalone/Mock fallback: pick 1-2 random photos from the event
+      console.warn("AI face extractor offline. Simulating matching results.");
+      let allPhotos = [];
+      if (isConnected) {
+        allPhotos = await Photo.find({ event: eventId });
+      } else {
+        allPhotos = MOCK_PHOTOS.filter(p => p.event === eventId);
+      }
+
+      // Randomly select up to 2 photos to mock a positive match
+      const count = Math.min(allPhotos.length, Math.floor(Math.random() * 2) + 1);
+      const shuffled = [...allPhotos].sort(() => 0.5 - Math.random());
+      matchedPhotos = shuffled.slice(0, count);
+    }
+
+    // 4. Log the face search in database / mock list
+    if (isConnected) {
+      await FaceSearch.create({
+        event: eventId,
+        matchedPhotos: matchedPhotos.map(p => p._id)
+      });
+    } else {
+      MOCK_FACE_SEARCHES.push({
+        id: `fs-${Date.now()}`,
+        event: eventId,
+        matchedPhotos: matchedPhotos.map(p => p.id),
+        searchTime: new Date()
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      matchesCount: matchedPhotos.length,
+      photos: matchedPhotos.map(p => ({
+        id: p._id || p.id,
+        url: p.url,
+        title: p.title
+      }))
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get photographer Face Recognition metrics
+// @route   GET /api/events/stats/face-recognition
+// @access  Private
+export const getFaceRecognitionStats = async (req, res) => {
+  try {
+    let myEvents = [];
+    if (isConnected) {
+      myEvents = await Event.find({ photographer: req.user.id });
+    } else {
+      myEvents = MOCK_EVENTS.filter(e => e.photographer === req.user.id);
+    }
+
+    const myEventIds = myEvents.map(e => e._id ? e._id.toString() : e.id);
+
+    let totalEvents = myEvents.length;
+    let totalPhotos = 0;
+    let totalFacesDetected = 0;
+    let totalFaceSearches = 0;
+    let successfulMatches = 0;
+
+    if (isConnected) {
+      totalPhotos = await Photo.countDocuments({ event: { $in: myEvents.map(e => e._id) } });
+      totalFacesDetected = await FaceEmbedding.countDocuments({ event: { $in: myEvents.map(e => e._id) } });
+      totalFaceSearches = await FaceSearch.countDocuments({ event: { $in: myEvents.map(e => e._id) } });
+      successfulMatches = await FaceSearch.countDocuments({ 
+        event: { $in: myEvents.map(e => e._id) },
+        'matchedPhotos.0': { $exists: true }
+      });
+    } else {
+      // Mock calculations
+      totalPhotos = MOCK_PHOTOS.filter(p => myEventIds.includes(p.event)).length;
+      totalFacesDetected = MOCK_FACE_EMBEDDINGS.filter(fe => myEventIds.includes(fe.event)).length;
+      
+      const searches = MOCK_FACE_SEARCHES.filter(fs => myEventIds.includes(fs.event));
+      totalFaceSearches = searches.length;
+      successfulMatches = searches.filter(fs => fs.matchedPhotos && fs.matchedPhotos.length > 0).length;
+    }
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        totalEvents,
+        totalPhotos,
+        totalFacesDetected,
+        totalFaceSearches,
+        successfulMatches
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

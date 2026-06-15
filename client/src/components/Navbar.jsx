@@ -15,6 +15,12 @@ export default function Navbar() {
     { name: 'Contact', path: '/contact' }
   ];
 
+  const dashboardLinks = [
+    { name: 'Events', path: '/dashboard' },
+    { name: 'Face Analytics', path: '/dashboard/face-recognition' },
+    { name: 'QR Codes', path: '/dashboard/qr-management' }
+  ];
+
   return (
     <nav className="sticky top-0 z-50 glass border-b border-white/5 py-4 px-6 md:px-12 flex items-center justify-between">
       {/* Logo */}
@@ -28,21 +34,19 @@ export default function Navbar() {
       </Link>
 
       {/* Desktop Navigation */}
-      {!isDashboard && (
-        <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
-            <Link
-              key={link.name}
-              to={link.path}
-              className={`font-medium tracking-wide text-sm transition-colors hover:text-white ${
-                location.pathname === link.path ? 'text-brand-400' : 'text-neutral-400'
-              }`}
-            >
-              {link.name}
-            </Link>
-          ))}
-        </div>
-      )}
+      <div className="hidden md:flex items-center gap-8">
+        {(isDashboard ? dashboardLinks : navLinks).map((link) => (
+          <Link
+            key={link.name}
+            to={link.path}
+            className={`font-medium tracking-wide text-sm transition-colors hover:text-white ${
+              location.pathname === link.path ? 'text-brand-400' : 'text-neutral-400'
+            }`}
+          >
+            {link.name}
+          </Link>
+        ))}
+      </div>
 
       {/* Auth & CTAs */}
       <div className="hidden md:flex items-center gap-4">
@@ -84,7 +88,7 @@ export default function Navbar() {
       {/* Mobile Menu Dropdown */}
       {isOpen && (
         <div className="absolute top-full left-0 right-0 glass border-b border-white/10 p-6 flex flex-col gap-4 md:hidden animate-in fade-in slide-in-from-top-5 duration-200">
-          {!isDashboard && navLinks.map((link) => (
+          {(isDashboard ? dashboardLinks : navLinks).map((link) => (
             <Link
               key={link.name}
               to={link.path}

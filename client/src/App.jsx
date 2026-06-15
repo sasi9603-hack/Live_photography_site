@@ -9,6 +9,9 @@ import Contact from './pages/Contact';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ClientGallery from './pages/ClientGallery';
+import FaceSearch from './pages/FaceSearch';
+import FaceStats from './pages/FaceStats';
+import QrManagement from './pages/QrManagement';
 
 // Protected Route helper for Photographer Dashboard
 const ProtectedRoute = ({ children }) => {
@@ -43,10 +46,27 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            <Route 
+              path="/dashboard/face-recognition" 
+              element={
+                <ProtectedRoute>
+                  <FaceStats />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/dashboard/qr-management" 
+              element={
+                <ProtectedRoute>
+                  <QrManagement />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Client Gallery Portal Routes */}
             <Route path="/gallery/enter" element={<ClientGallery />} />
             <Route path="/gallery/:code" element={<ClientGallery />} />
+            <Route path="/gallery/:code/face-search" element={<FaceSearch />} />
             
             {/* Fallback routing */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -60,3 +80,4 @@ function App() {
 }
 
 export default App;
+

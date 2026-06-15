@@ -110,6 +110,31 @@ export const api = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to register download');
     return data;
+  },
+
+  // Face Recognition APIs
+  async searchFace(eventId, selfieFile, threshold = 0.85) {
+    const formData = new FormData();
+    formData.append('selfie', selfieFile);
+    formData.append('threshold', threshold);
+
+    const res = await fetch(`${API_BASE}/events/${eventId}/face-search`, {
+      method: 'POST',
+      headers: getHeaders(true), // multipart/form-data
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Face search failed');
+    return data;
+  },
+
+  async getFaceStats() {
+    const res = await fetch(`${API_BASE}/events/stats/face-recognition`, {
+      headers: getHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to fetch face recognition stats');
+    return data;
   }
 };
 
